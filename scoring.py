@@ -11,6 +11,23 @@ import data_processing
 
 
 def precision_at_z(test, y_pred, threshold=0.1):
+    """
+    Computes precision at z, as illustrated in the thesis.
+
+    Parameters
+    ----------
+        test : np.array
+            Test dataset
+        y_pred : np.array
+            Predicted dataset
+        threshold : float, optional
+            Threshold value for the classification. Defaults to 0.1.
+
+    Returns
+    -------
+        precision : np.array
+            Precision at z
+    """
     self.block_recommend(range(self.Y.shape[0]), 1)  # call to function
     precision = 0
     recommended_and_relevant = np.zeros(shape=self.Y.shape[0])
@@ -25,6 +42,23 @@ def precision_at_z(test, y_pred, threshold=0.1):
 
 
 def recall_at_z(test, y_pred, threshold=0.1):
+    """
+    Computes recall at z, as illustrated in the thesis.
+
+    Parameters
+    ----------
+        test : np.array
+            Test dataset
+        y_pred : np.array
+            Predicted dataset
+        threshold : float, optional
+            Threshold value for the classification. Defaults to 0.1.
+
+    Returns
+    -------
+        recall : np.array
+            Recall at z
+    """
     self.block_recommend(range(self.Y.shape[0]), 1)  # call to function
     recall = 0
     recommended_and_relevant = np.zeros(shape=self.Y.shape[0])

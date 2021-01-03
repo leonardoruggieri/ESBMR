@@ -1,5 +1,6 @@
+#%%
 import pandas as pd
-import numpy as np
+import numpy as np 
 import random
 from numpy import matlib
 from scipy.special import betaln
@@ -12,17 +13,13 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
+import train_test_split
 from sklearn.cluster import KMeans
 from kneed import KneeLocator
 from sklearn.metrics import silhouette_score
-from functools import partial
-import multiprocessing
-
-# Custom modules
-import multiprocessing_functions
 
 #%%
-class esbmr2():
+class esbmr_old():
     def __init__(self, prior_u = "DP", alpha_urn_u = 2.55,
                        prior_i ="DP", alpha_urn_i = 2.55,
                        a = 1, b = 1,
@@ -35,7 +32,6 @@ class esbmr2():
         ----------
            (under construction)
         '''
-        #self.prior_u = prior_u
         self.alpha_urn_u = alpha_urn_u
         self.prior_i = prior_i
         self.prior_u = prior_u
@@ -50,8 +46,6 @@ class esbmr2():
         self.ll = []
 
     def fit(self, Y, its, 
-            kmeans = True,
-            vi = False,
             xu = None, xi = None, 
             alpha_xu = 1.5, alpha_xi = 1.5, 
             beta_xu = 1, beta_xi = 1, 
@@ -61,22 +55,19 @@ class esbmr2():
         
         self.Y = Y
         self.its = its
-        self.kmeans = kmeans
-        self.vi = vi
         self.xu = xu
         self.xi = xi
         self.alpha_xu = alpha_xu
         self.alpha_xi = alpha_xi
         self.beta_xu = beta_xu
         self.beta_xi = beta_xi
-        self.cont_par = cont_par  # parameters of a continuous covariate
+        self.cont_par = cont_par # parameters of a continuous covariate
         self.xu_type = xu_type
         self.xi_type = xi_type
         self.verbose = verbose
         self.valid = valid
         self.mserror = mserror
 
-        #print(f"Checks started: {time.time()}")
         self.__howmany_covariates()
 
         self.__check_covariates()
@@ -86,20 +77,13 @@ class esbmr2():
         self.__check_prior_parameters_i()
 
         self.burn_in = burn_in
-        
+
         self.__gibbs(burn_in, thinning = 1)
-        
+
         self.__compute_cluster_assignments()
 
-#         self.__count_possible_edges(self.zu, self.zi)
-
-        if kmeans == True:
-           self.KMeans_estimator(method_u = "silhouette", method_i = "silhouette")
-
-        self.__count_possible_edges_est(self.zu_est, self.zi_est)
+        self.__count_possible_edges(self.zu, self.zi)
         self.__compute_block_interactions()
-        
-        print(f"End: {time.time()}")
 
     def __covariates_preprocessing(self):
 
@@ -197,11 +181,11 @@ class esbmr2():
                     # NB: "self.XU[k][:,:]" per prendere XU della covariata k-esima.
                     alpha0i_temp, alpha_xi_temp, beta_xi_temp = self.hyperparameters_preprocessing_categ(self.xi[cov_i], self.alpha_xi[cov_i], self.beta_xi[cov_i])
                     XI_temp = self.__covar_preprocess_categ(self.xi[cov_i])
-                    print(f" - Categorical covariate {cov_i} for items preprocessed.")
+                    print(f" - Categorical covariate {cov_i} for users preprocessed.")
                 if self.xi_type[cov_i] == "count":
                     alpha0i_temp, alpha_xi_temp, beta_xi_temp = self.hyperparameters_preprocessing_count(self.xi[cov_i], self.alpha_xi[cov_i], self.beta_xi[cov_i])
                     XI_temp = self.__covar_preprocess_count(self.xi[cov_i])
-                    print(f" - Count-type covariate {cov_i} for items preprocessed.")
+                    print(f" - Count-type covariate {cov_i} for users preprocessed.")
                 
                 self.cont_cov_i = 0 # index to use to pick the right parameters from cont_par (in case more parameter vectors can be provided -> possible extension, not implemented yet)
                 if self.xi_type[cov_i] == "cont":
@@ -209,7 +193,7 @@ class esbmr2():
                     XI_temp = self.__covar_preprocess_continuous()
                     self.index_cont_cov_i[cov_i] = self.cont_cov_i
                     self.cont_cov_i += 1
-                    print(f" - Continuous covariate {cov_i} for items preprocessed.")
+                    print(f" - Continuous covariate {cov_i} for users preprocessed.")
 
                 self.XI.append(XI_temp)
                 self.alpha0i_t.append(alpha0i_temp)
@@ -256,12 +240,12 @@ class esbmr2():
         self.__count_possible_edges(self.zu,self.zi)
         self.zu_labels = self.zu @ range(self.zu.shape[1])
         self.zi_labels = self.zi @ range(self.zi.shape[1])
-        self.__compute_block_interactions_init(verbose = False)
-        y_predicted = self.__predict_init(self.Y)
+        self.__compute_block_interactions(verbose = False)
+        y_predicted = self.predict(self.Y)
         if self.valid is not None:
             self.mse_valid.append(self.mse(self.valid, y_predicted)) # it will only compute the MSE for those values in the valid set. See function __int_mse.
         self.mse_train.append(self.mse(self.Y, y_predicted))
-        self.y_predicted0 = self.__predict_init(self.Y) # DIAGNOSTIC PURPOSES
+        self.y_predicted0 = self.predict(self.Y) # DIAGNOSTIC PURPOSES
 
 
     def __count_possible_edges(self, zu, zi):
@@ -269,55 +253,20 @@ class esbmr2():
         self.m_i = np.array(np.sum(zi, axis = 0)) # no. items in each cluster
 
         # no. of possible interactions (edges) between pairs of clusters:
-        self.n_cardinality = np.outer(self.m_u, self.m_i)
-                
-    def __count_possible_edges_est(self, zu_est, zi_est):
-        self.zu_est_vec = self.__indicator_matrix(zu_est)
-        self.zi_est_vec = self.__indicator_matrix(zi_est)
-        
-        self.m_u = np.array(np.sum(self.zu_est_vec, axis = 0)) # no. users in each cluster
-        self.m_i = np.array(np.sum(self.zi_est_vec, axis = 0)) # no. items in each cluster
-
-        # no. of possible interactions (edges) between pairs of clusters:
-        temp0 = self.Y @ self.zi_est_vec
-        self.s_full = self.zu_est_vec.T @ temp0
-        
-        self.n_cardinality = np.outer(self.m_u, self.m_i)
-        
-        if self.kmeans == True:
-            self.zu_est_kmeans_vec = self.__indicator_matrix(self.zu_est_kmeans)
-            self.zi_est_kmeans_vec = self.__indicator_matrix(self.zi_est_kmeans)
-
-            self.m_u_kmeans = np.array(np.sum(self.zu_est_kmeans_vec, axis = 0)) # no. users in each cluster
-            self.m_i_kmeans = np.array(np.sum(self.zi_est_kmeans_vec, axis = 0)) # no. items in each cluster
-
-            # no. of possible interactions (edges) between pairs of clusters:
-            temp0 = self.Y @ self.zi_est_kmeans_vec
-            self.s_full_kmeans = self.zu_est_kmeans_vec.T @ temp0
-
-            self.n_cardinality_kmeans = np.outer(self.m_u_kmeans, self.m_i_kmeans)
-            
-        if self.vi == True:
-            self.zu_est_vi_vec = self.__indicator_matrix(self.zu_est_vi)
-            self.zi_est_vi_vec = self.__indicator_matrix(self.zi_est_vi)
-
-            self.m_u_vi = np.array(np.sum(self.zu_vi_est_vec, axis = 0)) # no. users in each cluster
-            self.m_i_vi = np.array(np.sum(self.zi_vi_est_vec, axis = 0)) # no. items in each cluster
-
-            # no. of possible interactions (edges) between pairs of clusters:
-            temp0 = self.Y @ self.zi_est_vi_vec
-            self.s_full_vi = self.zu_est_vi_vec.T @ temp0
-
-            self.n_cardinality_vi = np.outer(self.m_u_vi, self.m_i_vi)
-
-            
+        self.n_cardinality = np.zeros(shape = (self.m_u.shape[0], self.m_i.shape[0]))
+        for i in range(self.n_cardinality.shape[0]):
+            for j in range(self.n_cardinality.shape[1]):
+                self.n_cardinality[i,j] = self.m_u[i] * self.m_i[j]
 
     def __count_possible_edges_return(self, zu, zi):
         m_u_plus = np.array(np.sum(zu, axis = 0)) # no. users in each cluster
         m_i_plus = np.array(np.sum(zi, axis = 0)) # no. items in each cluster
 
         # no. of possible interactions (edges) between pairs of clusters:
-        n_cardinality_plus = np.outer(m_u_plus, m_i_plus)
+        n_cardinality_plus = np.zeros(shape = (m_u_plus.shape[0], m_i_plus.shape[0]))
+        for i in range(n_cardinality_plus.shape[0]):
+            for j in range(n_cardinality_plus.shape[1]):
+                n_cardinality_plus[i,j] = m_u_plus[i] * m_i_plus[j]
         return n_cardinality_plus, m_u_plus, m_i_plus
 
 
@@ -372,71 +321,30 @@ class esbmr2():
     def __indicator_matrix(self, vector):
         '''
         Returns a matrix of dimension (V,H), where V is the length of the input vector and H is the maximum value of the input vector.
-        Each row is an indicator vector for an element of the original vector. It assumes value equal to 1 in the column corresponding to the value for that element.
+        Each row is an indicator vector for an element of the original vector. It assumes value equal to 1 in the colimn corresponding to the value for that element.
         '''
         V = vector.shape[0]
-        H = int(np.max(vector)+1)        
+        H = int(np.max(vector)+1)
         self.z = np.zeros(shape = (V,H))
-        
-        indicator_row_partial = partial(self.indicator_row, vector = vector)
-
-        self.z = np.array(multiprocessing_functions.multi_func_list([i for i in range(vector.shape[0])],
-                                                           indicator_row_partial,
-                                                           n_procs=multiprocessing.cpu_count()))
+        for i in range(vector.shape[0]):
+            self.z[i,int(vector[i])] = 1
         return self.z
 
-    def indicator_row(self, i, vector):
-        self.z[i, int(vector[i])] = 1
-        return self.z[i]
-    
-#     def __indicator_matrix(self, vector):
-#         '''
-#         Returns a matrix of dimension (V,H), where V is the length of the input vector and H is the maximum value of the input vector.
-#         Each row is an indicator vector for an element of the original vector. It assumes value equal to 1 in the colimn corresponding to the value for that element.
-#         '''
-#         V = vector.shape[0]
-#         H = int(np.max(vector)+1)
-#         self.z = np.zeros(shape = (V,H))
-#         for i in range(vector.shape[0]):
-#             self.z[i,int(vector[i])] = 1
-#         return self.z
-    
     def __vector_to_matrix(self, vector):
         '''
         Returns a matrix of dimension (V,H), where V is the length of the input vector and H is the maximum value of the input vector.
         Each row corresponds to an element of the vector.
         '''
         V = vector.shape[0]
-        H = int(np.max(vector)+1)        
+        H = int(np.max(vector)+1)
         self.z = np.zeros(shape = (V,H))
-        
-        indicator_row_partial = partial(self.vector_to_row, vector = vector)
-
-        self.z = np.array(multiprocessing_functions.multi_func_list([i for i in range(vector.shape[0])],
-                                                           indicator_row_partial,
-                                                           n_procs=multiprocessing.cpu_count()))
+        for i in range(vector.shape[0]):
+            self.z[i,int(vector[i])] = vector[i]
         return self.z
-
-    def vector_to_row(self, i, vector):
-        self.z[i, int(vector[i])] = vector[i]
-        return self.z[i]
-    
-    
-#     def __vector_to_matrix(self, vector):
-#         '''
-#         Returns a matrix of dimension (V,H), where V is the length of the input vector and H is the maximum value of the input vector.
-#         Each row corresponds to an element of the vector.
-#         '''
-#         V = vector.shape[0]
-#         H = int(np.max(vector)+1)
-#         self.z = np.zeros(shape = (V,H))
-#         for i in range(vector.shape[0]):
-#             self.z[i,int(vector[i])] = vector[i]
-#         return self.z
 
     def __vector_to_matrix_continuous(self, vector):
         '''
-        Creating a diagonal matrix with the continuous values of the covariate
+        Creating a diagonal matrix with the coninuous values of the covariate
         '''
         V, H = vector.shape
         self.z = np.zeros(shape = (V,H))
@@ -789,7 +697,7 @@ class esbmr2():
                 return self.__urn_GN_i(m_i, self.gamma)      
 
         print("------------------\nGibbs Sampling simulation starts.")
-        tic = time.time()
+        tic = time.clock()
 
         self.zu_mcmc = []
         self.zi_mcmc = []
@@ -799,10 +707,10 @@ class esbmr2():
 
 
         for it in range(self.its):
-            #print(f"---------- It {it} starts at {time.time()}. ---------")
             for u in range(self.U):
                 # STEP 1: Removing user u and sampling
-                #print(time.time())
+                
+
                 mask_u = self.indu[:u] + self.indu[u+1:]
                 zu_minus = self.zu[mask_u]
 
@@ -823,44 +731,25 @@ class esbmr2():
                     if len(nonempty_u) == 1:
                         self.zu = np.array(self.zu)
                         
-                        
-#                 self.zu = pd.DataFrame(self.zu)
-#                 self.zu.columns = range(self.zu.shape[1])
-#                 #print(self.zu.columns)
-#                 val = self.zu.sum(axis = 0)
-#                 ind = val.index[val > 0]
-#                 self.index_test = ind
-#                 #print(f"Index: {ind}")
-#                 #print(f"zu shape: {self.zu.shape}")
-#                 self.zu = pd.DataFrame(self.zu).iloc[:,ind]
-                
-                
+                    # z = np.array(z).T
+                    self.zu_u = self.zu[mask_u,:] # cluster assignments without user u, after possibly removing u's empty cluster
 
-                # z = np.array(z).T
-                
-                self.zu_u = self.zu[mask_u,:] # cluster assignments without user u, after possibly removing u's empty cluster
-                #self.zu_u = self.zu.iloc[mask_u,:] # cluster assignments without user u, after possibly removing u's empty cluster
+                    # Note: s_full is not squared! dim=(clusters_u*clusters_i). Hence we only remove EMPTY ROWS (u clusters)
+                    self.s_full = self.s_full[nonempty_u]  # Reducing ROW dimension of s_full matrix
 
-                # Note: s_full is not squared! dim=(clusters_u*clusters_i). Hence we only remove EMPTY ROWS (u clusters)
-                self.s_full = self.s_full[nonempty_u]  # Reducing ROW dimension of s_full matrix
-                #self.s_full = self.s_full[ind]  # Reducing ROW dimension of s_full matrix
+                    '''
+                    Note1: this operation already resets the indeces of the components.
+                    Recall that we are retrieving the components up to permutations of indices.
 
-                '''
-                Note1: this operation already resets the indeces of the components.
-                Recall that we are retrieving the components up to permutations of indices.
+                    Note2: zu will contain an EMPTY ROW, which is the raw of cluster assignment for user u,
+                    which will be determined afterwards. zu_u removes this empty row of zu to perform matrix operations.
+                    zu.shape    == (users,   nonempty clusters for users after removing u)
+                    zu_u.shape  == (users-1, nonempty clusters for users after removing u)
 
-                Note2: zu will contain an EMPTY ROW, which is the raw of cluster assignment for user u,
-                which will be determined afterwards. zu_u removes this empty row of zu to perform matrix operations.
-                zu.shape    == (users,   nonempty clusters for users after removing u)
-                zu_u.shape  == (users-1, nonempty clusters for users after removing u)
-
-                '''
-                #self.zu = np.array(self.zu) # CASTING AS ARRAY, TO BE COMPLIANT WITH THE REST OF THE CODE
-                #self.zu_u = np.array(self.zu_u) # CASTING AS ARRAY, TO BE COMPLIANT WITH THE REST OF THE CODE
-                
+                    '''
                 self.H = self.zu.shape[1] # *occupied* users clusters (can be less than starting value)
                 self.K = self.zi.shape[1] # items clusters
-                #print(time.time())
+
                 '''
                 See McDaid p.40: "...posterior, now that we have *observed* edges with total weight ykl between pkl pairs of nodes (pair of nodes = all possible edges)".
                 '''
@@ -900,7 +789,6 @@ class esbmr2():
 
                 prob = prob_unnormalized/np.sum(prob_unnormalized) 
 
-                #print(time.time())
                 
                 '''Pick randomly a partition:'''
                 zu_sampled = np.random.choice(a = range(self.H+1), p = prob) # range(H+1) samples from 0 to H value
@@ -951,8 +839,7 @@ class esbmr2():
 
 
                 self.zu_labels = self.zu @ range(self.zu.shape[1])
-                
-                #print(f"User {u} updated.")
+                # print(f"User {u} updated.")
             
 
             for i in range(self.I):
@@ -1010,8 +897,7 @@ class esbmr2():
 
                 log_prob_int = np.array(np.sum(gammaln(self.a + self.s_full.T + R_i) - gammaln(self.a + self.s_full.T) + (self.a + self.s_full.T) * np.log(self.b + self.n_cardinality.T) - (self.a + self.s_full.T + R_i) * np.log(self.b + self.n_cardinality.T + M_u), axis = 1)) 
 
-                log_prob_int_new = np.sum(gammaln(self.a + r_i) - gammaln(self.a) + self.a * np.log(self.b) - (self.a + r_i) * np.log(self.b + self.m_u))
-                
+                log_prob_int_new = np.sum(gammaln(self.a + r_i) - gammaln(self.a) + self.a * np.log(self.a) - (self.a + r_i) * np.log(self.b + self.m_u))
                 log_prob_int = np.append(log_prob_int,log_prob_int_new)
                             
 
@@ -1082,15 +968,13 @@ class esbmr2():
 
 
             self.__count_possible_edges(self.zu,self.zi)
+            likel = self.__marginal_loglik_bipartite(self.Y, self.zu_labels, self.zi_labels, self.a, self.b, self.s_full, self.n_cardinality)
+            self.ll.append(likel)
 
             
             if self.verbose == True:
-                likel = self.__marginal_loglik_bipartite(self.Y, self.zu_labels, self.zi_labels, self.a, self.b, self.s_full, self.n_cardinality)
-                self.ll.append(likel)
                 print(f"Iteration {it} complete. Log-likelihood: {likel}.")
             elif it % 10 == 0:
-                likel = self.__marginal_loglik_bipartite(self.Y, self.zu_labels, self.zi_labels, self.a, self.b, self.s_full, self.n_cardinality)
-                self.ll.append(likel)
                 print(f"Iteration {it} complete. Log-likelihood: {likel}.")
 
         self.zu_mcmc = np.array(self.zu_mcmc)
@@ -1099,7 +983,7 @@ class esbmr2():
         self.components_u = np.array(self.components_u)
         self.components_i = np.array(self.components_i)
 
-        toc = time.time()
+        toc = time.clock()
         print(f"Runtime: {toc-tic}")
 
     def __check_prior_parameters_u(self):
@@ -1201,33 +1085,16 @@ class esbmr2():
         #    if len(self.xi_type) > 1:
         #        raise KeyError(f"Invalid dimension of 'xi_type'. If one covariate is provided, then the dimension must be 1 instead of {len(self.xi_type)}.")
 
-        
+
     def __compute_block_interactions(self, verbose = True):
-        print("Computing block interactions...")
-        self.theta_est = (self.a + self.s_full) / (self.b + self.n_cardinality)   
-        if verbose == True:
-            print("Block-interactions (mode estimator) computed.")
-
-        if self.kmeans == True:
-            self.theta_est_kmeans = (self.a + self.s_full_kmeans) / (self.b + self.n_cardinality_kmeans)
+        self.__count_possible_edges(self.zu, self.zi)
+        self.theta_est = (self.a + self.s_full) / (self.b + self.n_cardinality)
+        if self.theta_est is not None:
             if verbose == True:
-                print("Block-interactions (k-means estimator) computed.")
-        
-        if self.vi == True:
-            self.theta_est_vi = (self.a + self.s_full_vi) / (self.b + self.n_cardinality_vi)
-            if verbose == True:
-                print("Block-interactions (VI estimator) computed.")
-
-                
-    def __compute_block_interactions_init(self, verbose = True):
-        self.theta_est = (self.a + self.s_full) / (self.b + self.n_cardinality)   
+                print("Block-interactions computed.")
         return self.theta_est
 
     def __compute_cluster_assignments(self):
-        '''
-        Computes the cluster assignments as the mode of the MCMC.
-        It then re-labels the cluster assignments from 0 to (no. clusters - 1).
-        '''
         self.zu_est = []
         self.zi_est = []
         for user in range(self.Y.shape[0]):
@@ -1237,15 +1104,7 @@ class esbmr2():
         
         self.zu_est = np.array(self.zu_est)
         self.zi_est = np.array(self.zi_est)
-            
-        for dim in range(self.zu_est.max()):
-            if self.zu_est[self.zu_est == dim].shape[0] == 0:
-                self.zu_est[self.zu_est > dim] += -1
-            
-        for dim in range(self.zi_est.max()):
-            if self.zi_est[self.zi_est == dim].shape[0] == 0:
-                self.zi_est[self.zi_est > dim] += -1
-                
+
     def __howmany_covariates(self):
         if self.xu is not None and len(self.xu.shape) > 1:
             self.n_cov_u = self.xu.shape[0]
@@ -1432,42 +1291,6 @@ class esbmr2():
 
 
     def predict(self, values):
-        """
-        Using the fitted algorithm to predict the user-item interactions across the adjacency matrix Y.
-                
-        Parameters:
-        ----------
-            - values : np.array
-              Adjacency matrix. Only used to determine the dimension of the prediction matrix.
-            - cluster_estimator : str
-              A string taking values in 'mode', 'kmeans' and 'vi'. It takes the respective clustering estimate
-        """
-        # Initialize the matrix
-        y_predicted = np.empty(shape = values.shape)
-        
-        # Generating observations y
-        for s in range(values.shape[0]):
-            for j in range(values.shape[1]):
-                y_predicted[s,j] = self.theta_est[int(self.zu_est[s]),int(self.zi_est[j])]
-                    
-        if self.kmeans == True:
-            y_predicted_kmeans = np.empty(shape = values.shape)
-            for s in range(values.shape[0]):
-                for j in range(values.shape[1]):
-                    y_predicted_kmeans[s,j] = self.theta_est_kmeans[int(self.zu_est_kmeans[s]),int(self.zi_est_kmeans[j])]
-            return y_predicted, y_predicted_kmeans
-                    
-        elif self.vi == True:
-            y_predicted_vi = np.empty(shape = values.shape)
-            for s in range(values.shape[0]):
-                for j in range(values.shape[1]):
-                    y_predicted_vi[s,j] = self.theta_est_vi[int(self.zu_est_vi[s]),int(self.zi_est_vi[j])]
-            if self.kmeans == True:
-                return y_predicted, y_predicted_kmeans, y_predicted_vi
-                
-        
-        
-    def __predict_init(self, values):
         '''
         Using the fitted algorithm to predict the user-item interactions across the adjacency matrix Y.
                 
@@ -1484,7 +1307,6 @@ class esbmr2():
             for j in range(values.shape[1]):
                 y_predicted[s,j] = self.theta_est[int(self.zu_labels[s]),int(self.zi_labels[j])]
         return y_predicted
-
     
     def recommend(self, users, top_k):
         '''
@@ -1512,6 +1334,7 @@ class esbmr2():
                     top_k_temp.pop(min(top_k_temp, key=top_k_temp.get))
             self.top_k_recommended[index_u] = list(top_k_temp.keys())
         return self.top_k_recommended
+
 
     def block_recommend(self, users, top_k):
         '''
@@ -1553,38 +1376,24 @@ class esbmr2():
                 self.recommendations_u.append(np.argwhere(self.zi_est == self.top_k_clusters[index_u, ind]))
             self.recommendations[user] = self.recommendations_u
         return self.recommendations
+            # recommendations only contains the recommendations for one user. Why?
+            # This clearly makes precision_at_top_cluster not working.
 
-    def precision_at_z(self, test, y_pred, threshold = 0.1):
+    def precision_at_top_cluster(self, test, y_pred, threshold = 0.5):
         self.block_recommend(range(self.Y.shape[0]),1) # call to function
+        recommended_and_relevant = 0
         precision = 0
-        recommended_and_relevant = np.zeros(shape = self.Y.shape[0])
         for i in range(self.Y.shape[0]):
-            for item in range(self.recommendations[i][0].shape[0]):
-                index_item = self.recommendations[i][0][item][0]
-                if test[i, index_item] == 1 and y_pred[i, index_item] > threshold:
-                    recommended_and_relevant[i] += 1
-            precision += recommended_and_relevant[i] / self.recommendations[i][0].shape[0]
+            for item in range(self.recommendations[0][0].shape[0]):
+                if model.recommendations[1][0].shape[0] > item + 1:
+                    index_item = self.recommendations[i][0][item][0]
+                    if test[i, index_item] == 1 and y_pred[i, index_item] > threshold:
+                        recommended_and_relevant += 1
+            precision += recommended_and_relevant / self.recommendations[0][0].shape[0]
         precision = precision / self.Y.shape[0]
+        self.precision = precision
         return precision
 
-    def recall_at_z(self, test, y_pred, threshold = 0.1):
-        self.block_recommend(range(self.Y.shape[0]),1) # call to function
-        recall = 0
-        recommended_and_relevant = np.zeros(shape = self.Y.shape[0])
-        no_users_with_rel_items = 0
-        for i in range(self.Y.shape[0]):
-            for item in range(self.recommendations[i][0].shape[0]):
-                index_item = self.recommendations[i][0][item][0]
-                relevant_items = 0
-                if test[i, index_item] == 1 and y_pred[i, index_item] > threshold:
-                    recommended_and_relevant[i] += 1
-            relevant_items = test.sum(axis = 1)[i]
-            if relevant_items != 0:
-                recall += recommended_and_relevant[i] / relevant_items
-                no_users_with_rel_items += 1
-        recall = recall / no_users_with_rel_items
-        return recall
-    
     def accuracy(self, test, y_predicted, threshold = 0.5):
         '''
         Computes the out-of-sample accuracy of the model given a threshold for binary classification.
@@ -1626,16 +1435,6 @@ class esbmr2():
                 values = np.append(values, 0)
         return roc_curve(values, prediction)
     
-    def roc_auc_score(self, test, y_pred):
-        valid_dim = 0.2
-        prediction, values = y_pred[test.nonzero()].flatten(), test[test.nonzero()].flatten()
-        addit_ind_u = np.random.choice(np.where(self.Y == 0)[0], round(self.Y.shape[0]*valid_dim/5), replace=False)
-        addit_ind_i = np.random.choice(np.where(self.Y == 0)[1], round(self.Y.shape[0]*valid_dim/5), replace=False)
-        for ind_u in addit_ind_u:
-            for ind_i in addit_ind_i:
-                prediction = np.append(prediction, y_pred[ind_u,ind_i])
-                values = np.append(values, 0)
-        return roc_auc_score(values, prediction)
 
 
     def integrated_loglik_mcmc(self):
@@ -1674,3 +1473,6 @@ class esbmr2():
                 for item_y in range(self.Y.shape[1]):
                     if self.zi_mcmc_sorted[it,item_x] == self.zi_mcmc_sorted[it,item_y]:
                         self.ccmatrix_i[item_x, item_y] += 1
+
+
+# %%
