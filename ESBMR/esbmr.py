@@ -372,12 +372,11 @@ class esbmr():
             self.n_cardinality_kmeans = np.outer(self.m_u_kmeans, self.m_i_kmeans)
             
         if self.vi == True:
-            self.vi_estimator()
-            self.zu_est_vi_vec = self.__indicator_matrix(self.zu_est_vi_array)
-            self.zi_est_vi_vec = self.__indicator_matrix(self.zi_est_vi_array)
+            self.zu_est_vi_vec = self.__indicator_matrix(self.zu_est_vi)
+            self.zi_est_vi_vec = self.__indicator_matrix(self.zi_est_vi)
 
-            self.m_u_vi = np.array(np.sum(self.zu_est_vi_vec, axis = 0)) # no. users in each cluster
-            self.m_i_vi = np.array(np.sum(self.zi_est_vi_vec, axis = 0)) # no. items in each cluster
+            self.m_u_vi = np.array(np.sum(self.zu_vi_est_vec, axis = 0)) # no. users in each cluster
+            self.m_i_vi = np.array(np.sum(self.zi_vi_est_vec, axis = 0)) # no. items in each cluster
 
             # no. of possible interactions (edges) between pairs of clusters:
             temp0 = self.Y @ self.zi_est_vi_vec
@@ -1411,8 +1410,8 @@ class esbmr():
         ccmatrix_i_ordered_bin = self.ccmatrix_i_ordered.copy()
         ccmatrix_u_ordered_bin = ccmatrix_u_ordered_bin / ccmatrix_u_ordered_bin.max()
         ccmatrix_i_ordered_bin = ccmatrix_i_ordered_bin / ccmatrix_i_ordered_bin.max()
-        self.ccmatrix_u_ordered_bin = np.tril(ccmatrix_u_ordered_bin) + np.triu(ccmatrix_u_ordered_bin.T, 1)
-        self.ccmatrix_i_ordered_bin = np.tril(ccmatrix_i_ordered_bin) + np.triu(ccmatrix_i_ordered_bin.T, 1)
+        ccmatrix_u_ordered_bin = np.tril(ccmatrix_u_ordered_bin) + np.triu(ccmatrix_u_ordered_bin.T, 1)
+        ccmatrix_i_ordered_bin = np.tril(ccmatrix_i_ordered_bin) + np.triu(ccmatrix_i_ordered_bin.T, 1)
 
         numpy2ri.activate()
 
@@ -1425,13 +1424,11 @@ class esbmr():
         self.zi_est_vi_array = self.zi_est_vi_array - 1 # VI estimate for i in numpy array type
 
         credible_u = mcclust.credibleball(self.zu_est_vi, self.zu_mcmc, "VI", alpha = alpha)
-        credible_i = mcclust.credibleball(self.zi_est_vi, self.zi_mcmc, "VI", alpha = alpha)
+        credible_i = mcclust.credibleball(self.zu_est_vi, self.zu_mcmc, "VI", alpha = alpha)
         self.horiz_u, self.dist_horiz_u = np.array(credible_u[1]), credible_u[4]
         self.horiz_i, self.dist_horiz_i = np.array(credible_i[1]), credible_i[4]
 
         numpy2ri.deactivate()
-
-        return self.zu_est_vi_array, self.zi_est_vi_array, self.horiz_u, self.horiz_i
 
 
     def __mse_int(self, data, pred):
@@ -1492,7 +1489,7 @@ class esbmr():
                     y_predicted_kmeans[s,j] = self.theta_est_kmeans[int(self.zu_est_kmeans[s]),int(self.zi_est_kmeans[j])]
             return y_predicted, y_predicted_kmeans
                     
-        if self.vi == True:
+        elif self.vi == True:
             y_predicted_vi = np.empty(shape = values.shape)
             for s in range(values.shape[0]):
                 for j in range(values.shape[1]):
