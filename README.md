@@ -4,4 +4,7 @@ The ESBMR is an extension to the recommendation setting of the ESBM by Legramant
 
 The model has been developed for my Master of Science thesis in Economics at Bocconi University.
 
-You can find the documentation at this link: (WIP).
+You can find the documentation at this link: https://leonardoruggieri.github.io/esbmr.html
+
+You can install the package with the following command:
+<code>pip install -i https://test.pypi.org/simple/ esbmr==1.0</code>
